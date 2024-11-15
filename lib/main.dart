@@ -204,58 +204,80 @@ class _ScoreCounterState extends State<ScoreCounter> {
   @override
   Widget build(BuildContext context) {
     score = widget.initialScore;
-    return Column(
-      children: [
-        Text(
-          widget.label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
+    return GestureDetector(
+      onLongPress: () async{
+        Map? tile = await showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AddPopup(initialLabel: widget.label, initialColor: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]));
+          }
+        );
+        if (tile != null){
+          String label = tile["label"];
+          Color color = tile['color'];
+          // setState(() {
+          //   players[label] = {'score': 0, 'color': [color.alpha, color.red, color.green, color.blue]};
+          // });
+          // writeData(players, append: false);
+        }      
+      },
+      child: Column(
+        children: [
+          Text(
+            widget.label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-        const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]).withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), width: 2),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const SizedBox(height: 5),
-              Text(
-                '$score',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]).withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), width: 2),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const SizedBox(height: 5),
+                Text(
+                  '$score',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.remove, color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), size: 40,),
-                    onPressed: decrement,
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.add, color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), size: 40,),
-                    onPressed: increment,
-                  ),
-                ],
-              ),
-            ],
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.remove, color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), size: 40,),
+                      onPressed: decrement,
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.add, color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), size: 40,),
+                      onPressed: increment,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
 class AddPopup extends StatefulWidget {
-  const AddPopup({super.key});
+  final String? initialLabel;
+  final Color? initialColor;
+  const AddPopup({
+    super.key, this.initialLabel, this.initialColor
+  });
   @override
 
   _AddPopupState createState() => _AddPopupState();
@@ -273,6 +295,7 @@ class _AddPopupState extends State<AddPopup> {
           SizedBox(
             width: 150,
             child: TextFormField(
+              initialValue: widget.initialLabel ?? '',
               onChanged:(value) => label = value,
             ),
           ),
@@ -288,7 +311,7 @@ class _AddPopupState extends State<AddPopup> {
                       title: const Text('Pick a color'),
                       content: SingleChildScrollView(
                         child: ColorPicker(
-                          pickerColor: tempColor,
+                          pickerColor: widget.initialColor ?? tempColor,
                           paletteType: PaletteType.hueWheel, // This is the key fix
                           enableAlpha: false,
                           onColorChanged: (color) {
