@@ -3,9 +3,10 @@
 import 'package:counter/file_handling.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:intl/intl.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -51,25 +52,68 @@ class _ScoreBoardState extends State<ScoreBoard> {
     //   "Mitch": {"score": 5, "color": [255, 0, 128, 0]}, // Green
     //   "Cooper": {"score": 4, "color": [200, 0, 0, 255]}, // Blue
     // };
+    resetData(true, false, false);
     setState(() {
       // Use setState to update players after data is loaded and sorted
       players = Map.fromEntries(
         rawPlayers.entries.toList()
-          ..sort((a, b) => b.value["score"].compareTo(a.value["score"]))
+          ..sort((a, b) => (b.value["history"]?.length ?? 0).compareTo(a.value["history"]?.length ?? 0))
       );
     });
   }
 
-  void alterPlayers(String label, int value){
+  void alterPlayers(String label, List value){
     setState(() {
-      players[label]!['score'] = value;
+    players[label]!['history'] = value;
       players = Map.fromEntries(
         players.entries.toList()
-          ..sort((a, b) => b.value["score"].compareTo(a.value["score"]))
+          ..sort((a, b) => (b.value["history"].length ?? 0).compareTo(a.value["history"].length ?? 0))
       );
     });
     writeData(players, append: false);
   }
+  void editPlayer(String oldKey, Map newTile){
+    Map<String, dynamic> updatedPlayers = {};
+    
+    players.forEach((key, value) {
+      if (key == oldKey) {
+        // Replace the old key with the new key and update the value
+        updatedPlayers[newTile['label']] = {
+          'history': newTile['history'],
+          'color': newTile['color']
+        };
+      } else {
+        // Keep the original entries
+        updatedPlayers[key] = value;
+      }
+    });
+    setState(() {
+        players = updatedPlayers;
+    });
+    writeData(players, append: false);
+  }
+  void addRecord(String label, DateTime dateTime){
+    players[label]['history'] ??= [];
+    players[label]['history'].add(DateFormat('yyyy-MM-dd HH:mm').format(dateTime));
+    writeData(players, append: false);
+  }
+  void removeRecord(String player, int index){
+    setState(() {
+      // players[player]['history']?.removeAt(index);
+      players = Map.fromEntries(
+        players.entries.toList()
+          ..sort((a, b) => (b.value["history"].length ?? 0).compareTo(a.value["history"].length ?? 0))
+      );
+    });
+    writeData(players, append: false);
+  }
+  void removeTile(String key){
+    setState(() {
+      players.remove(key);
+    });
+    writeData(players, append: false);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -91,9 +135,14 @@ class _ScoreBoardState extends State<ScoreBoard> {
                   final key = players.keys.toList()[index];
                   return ScoreCounter(
                     label: key,
-                    initialScore: players[key]["score"],
+                    initialScore: players[key]["history"]?.length ?? 0,
                     color: players[key]["color"],
-                    function: alterPlayers,
+                    incriment: alterPlayers,
+                    edit: editPlayer,
+                    addRecord: addRecord, 
+                    history: players[key]['history'] ?? [], 
+                    removeRecord: removeRecord,
+                    removeTile: removeTile,
                   );
                 },
               ),
@@ -114,7 +163,7 @@ class _ScoreBoardState extends State<ScoreBoard> {
                   String label = tile["label"];
                   Color color = tile['color'];
                   setState(() {
-                    players[label] = {'score': 0, 'color': [color.alpha, color.red, color.green, color.blue]};
+                    players[label] = {'history': [], 'color': [255, color.red, color.green, color.blue]};
                   });
                   writeData(players, append: false);
                 }
@@ -165,14 +214,24 @@ class ScoreCounter extends StatefulWidget {
   final String label;
   final int initialScore;
   final List color;
-  final Function function;
+  final Function incriment;
+  final Function edit;
+  final Function addRecord;
+  final Function removeRecord;
+  final List history;
+  final Function removeTile;
 
   const ScoreCounter({
     super.key,
     required this.label,
     required this.initialScore,
     required this.color, 
-    required this.function,
+    required this.incriment, 
+    required this.edit,
+    required this.addRecord, 
+    required this.history, 
+    required this.removeRecord,
+    required this.removeTile,
   });
 
   @override
@@ -187,39 +246,56 @@ class _ScoreCounterState extends State<ScoreCounter> {
     super.initState();
   }
 
-  void increment() {
-    setState(() {
-      score++;
-    });
-    widget.function(widget.label, score);
+  void increment({DateTime? dateTime}) {
+    // setState(() {
+    //   score++;
+    // });
+    widget.addRecord(widget.label, dateTime ?? DateTime.now());
+    widget.incriment(widget.label, widget.history);
   }
 
-  void decrement() {
-    setState(() {
-      if (score > 0) score--;
-    });
-    widget.function(widget.label, score);
-  }
+  // void decrement() {
+  //   // setState(() {
+  //   //   if (score > 0) score--;
+  //   // });
+  //   widget.incriment(widget.label, score);
+  // }
 
   @override
   Widget build(BuildContext context) {
     score = widget.initialScore;
     return GestureDetector(
       onLongPress: () async{
-        Map? tile = await showDialog(
+        String? option = await showModalBottomSheet(
           context: context,
-          builder: (BuildContext context) {
-            return AddPopup(initialLabel: widget.label, initialColor: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]));
-          }
+          builder: (context) {
+            return OptionsPopup();
+          },
         );
-        if (tile != null){
-          String label = tile["label"];
-          Color color = tile['color'];
-          // setState(() {
-          //   players[label] = {'score': 0, 'color': [color.alpha, color.red, color.green, color.blue]};
-          // });
-          // writeData(players, append: false);
-        }      
+        if (option == 'Edit Tile') {
+          Map? tile = await showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return AddPopup(initialLabel: widget.label, initialColor: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]));
+            }
+          );
+          if (tile != null){
+            String label = tile["label"];
+            Color color = tile['color'];
+            Map newTile = {'label': label, 'history': widget.history, 'color': [255, color.red, color.green, color.blue]};
+            widget.edit(widget.label, newTile);
+          }     
+        } else if (option == 'View history'){
+          showDialog(
+            context: context,
+            builder: (context) {
+              return HistoryPopup(player: widget.history, playerName: widget.label, removeItem: widget.removeRecord, );
+            },
+          );
+        } else if (option == 'Delete Tile'){
+          widget.removeTile(widget.label);
+        }
+ 
       },
       child: Column(
         children: [
@@ -253,13 +329,34 @@ class _ScoreCounterState extends State<ScoreCounter> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    IconButton(
-                      icon: Icon(Icons.remove, color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), size: 40,),
-                      onPressed: decrement,
-                    ),
-                    IconButton(
-                      icon: Icon(Icons.add, color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), size: 40,),
-                      onPressed: increment,
+                    // IconButton(
+                    //   icon: Icon(Icons.remove, color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), size: 40,),
+                    //   onPressed: decrement,
+                    // ),
+                    GestureDetector(
+                      onLongPress: () async {
+                        final result = await showDialog(
+                          context: context,
+                          builder: (BuildContext context) {
+                            return const DateTimePickerDialog();
+                          },
+                        );
+                        if (result != null){
+                            final combinedDateTime = DateTime(
+                              result['date'].year,
+                              result['date'].month,
+                              result['date'].day,
+                              result['time'].hour,
+                              result['time'].minute,
+                            );
+
+                          increment(dateTime: combinedDateTime);
+                        }
+                      },
+                      child: IconButton(
+                        icon: Icon(Icons.add, color: Color.fromARGB(widget.color[0], widget.color[1], widget.color[2], widget.color[3]), size: 40,),
+                        onPressed: increment,
+                      ),
                     ),
                   ],
                 ),
@@ -286,6 +383,17 @@ class AddPopup extends StatefulWidget {
 class _AddPopupState extends State<AddPopup> {
   Color tempColor = Colors.white;
   String label = '';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialLabel != null) {
+      label = widget.initialLabel!;
+    }
+    if (widget.initialColor != null){
+      tempColor = widget.initialColor!;
+    }
+  }
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -295,7 +403,7 @@ class _AddPopupState extends State<AddPopup> {
           SizedBox(
             width: 150,
             child: TextFormField(
-              initialValue: widget.initialLabel ?? '',
+              initialValue: label,
               onChanged:(value) => label = value,
             ),
           ),
@@ -311,7 +419,7 @@ class _AddPopupState extends State<AddPopup> {
                       title: const Text('Pick a color'),
                       content: SingleChildScrollView(
                         child: ColorPicker(
-                          pickerColor: widget.initialColor ?? tempColor,
+                          pickerColor: tempColor,
                           paletteType: PaletteType.hueWheel, // This is the key fix
                           enableAlpha: false,
                           onColorChanged: (color) {
@@ -381,6 +489,225 @@ class _AddPopupState extends State<AddPopup> {
               fontSize: 20,
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class OptionsPopup extends StatefulWidget {
+  const OptionsPopup({super.key});
+
+  @override
+  _OptionsPopupState createState() => _OptionsPopupState();
+}
+
+class _OptionsPopupState extends State<OptionsPopup> {
+
+  void selectOption(String name) {
+    Navigator.pop(context, name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16.0),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            boxThing('Edit Tile'),
+            boxThing('Delete Tile'),
+            boxThing('View history'),
+          ]
+        ),
+      ),
+    );
+  }
+
+  Widget boxThing(String name) {
+    return GestureDetector(
+      onTap: () {
+        selectOption(name); // Trigger selectTime with the corresponding days
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2.5),
+        child: Container(
+          decoration: BoxDecoration(
+            // color: HexColor.fromHexColor('262626'),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                name,
+                style: TextStyle(
+                  fontSize: 20
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class HistoryPopup extends StatefulWidget {
+  final List player;
+  final String playerName;
+  final Function removeItem;
+  const HistoryPopup({
+    super.key, required this.player, required this.playerName, required this.removeItem,
+  });
+  @override
+
+  _HistoryPopupState createState() => _HistoryPopupState();
+}
+
+class _HistoryPopupState extends State<HistoryPopup> {
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(
+        'History for ${widget.playerName}',
+      ),
+      content: SizedBox(
+        width: 400,
+        child: Column(
+          mainAxisSize: MainAxisSize.min, // Ensures the dialog fits its content
+          children: [
+            const Divider(),
+            SizedBox(
+              height: 400, // Set a specific height for the ListView
+              child: ListView.builder(
+                itemCount: widget.player.length,
+                itemBuilder: (context, index) {
+                  index = (widget.player.length-1) - index;
+                  return ListTile(
+                    title: Text(
+                      widget.player[index],
+                      style: const TextStyle(
+                        fontSize: 18,
+                      ),
+                    ),
+                    trailing: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          widget.player.removeAt(index);
+                        });
+                        widget.removeItem(widget.playerName, index);
+                      },
+                      child: const Icon(
+                        Icons.close,
+                        size: 30,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+  }
+}
+
+
+class DateTimePickerDialog extends StatefulWidget {
+  final DateTime? initialDate;
+  final TimeOfDay? initialTime;
+
+
+  const DateTimePickerDialog({
+    this.initialDate,
+    this.initialTime,
+  });
+
+  @override
+  _DateTimePickerDialogState createState() => _DateTimePickerDialogState();
+}
+
+class _DateTimePickerDialogState extends State<DateTimePickerDialog> {
+  DateTime? date;
+  TimeOfDay? time;
+
+  @override
+  void initState() {
+    super.initState();
+    date = widget.initialDate ?? DateTime.now();
+    time = widget.initialTime ?? TimeOfDay.now();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Select Date and Time'),
+      content: Row(
+        children: [
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () async {
+                final selectedDate = await showDatePicker(
+                  context: context,
+                  initialDate: date ?? DateTime.now(),
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2101),
+                );
+                if (selectedDate != null) {
+                  setState(() {
+                    date = selectedDate;
+                  });
+                }
+              },
+              child: Text(
+                date != null
+                    ? '${date!.year}-${date!.month}-${date!.day}'
+                    : 'Select Date',
+              ),
+            ),
+          ),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: () async {
+                final selectedTime = await showTimePicker(
+                  context: context,
+                  initialTime: time ?? TimeOfDay.now(),
+                );
+                if (selectedTime != null) {
+                  setState(() {
+                    time = selectedTime;
+                  });
+                }
+              },
+              child: Text(
+                time != null
+                    ? time!.format(context)
+                    : 'Select Time',
+              ),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(context).pop();
+          },
+          child: Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            // Perform your desired action with fromDate, fromTime, toDate, and toTime
+            Navigator.of(context).pop({
+              'date': date,
+              'time': time,
+            });
+          },
+          child: Text('OK'),
         ),
       ],
     );
