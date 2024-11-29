@@ -4,11 +4,24 @@ import 'package:counter/file_handling.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-void main() {
+void main() async{
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const MyApp());
 }
-
+Future<void> addUser(String userId, String name) async {
+  await FirebaseFirestore.instance.collection('Players').doc(userId).set({
+    'name': name,
+    'createdAt': FieldValue.serverTimestamp(),
+  });
+  debugPrint("User added!");
+}
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -40,6 +53,7 @@ class _ScoreBoardState extends State<ScoreBoard> {
   void initState() {
     super.initState();
     _initializePlayers();  // Call the async method here without awaiting it
+    addUser('userid', 'username');
   }
 
   Future<void> _initializePlayers() async {

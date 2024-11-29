@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "884252521877",
+    "project_id": "tilecounterdb",
+    "storage_bucket": "tilecounterdb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:884252521877:android:cd872ac2dece989830b29c",
+        "android_client_info": {
+          "package_name": "com.DylanJ.counter"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "884252521877-p6qcps7dhdi9nkjrqcub3qa5ldskhukn.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBth6fMCbSFx4x2MaxZhvyXW5PAi6cgnLU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "884252521877-p6qcps7dhdi9nkjrqcub3qa5ldskhukn.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "884252521877-nrecjtlin7ravgb19gc7irs0mv8dlvm4.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.DylanJ.counter"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
