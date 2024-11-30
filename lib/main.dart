@@ -1,5 +1,7 @@
 // ignore_for_file: library_private_types_in_public_api
 
+import 'dart:math';
+
 import 'package:counter/file_handling.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
@@ -15,12 +17,85 @@ void main() async{
   );
   runApp(const MyApp());
 }
-Future<void> addUser(String userId, String name) async {
-  await FirebaseFirestore.instance.collection('Players').doc(userId).set({
-    'name': name,
-    'createdAt': FieldValue.serverTimestamp(),
+
+Future<void> addUser(String name, List color, List points) async {
+  await FirebaseFirestore.instance.collection('Players').doc(name).set({
+    'color': color,
+    'points': points,
   });
   debugPrint("User added!");
+}
+
+Future<void> updateUser(MapEntry entry, {String? name, List? color, List? points}) async {
+  if (name != null){
+    deleteUser(entry.key);
+    addUser(
+      name, 
+      color ?? entry.value['color'], 
+      points ?? entry.value['points']
+    );
+  }else{
+    await FirebaseFirestore.instance.collection('Players').doc(entry.key).update({
+      'color': color ?? entry.value['color'],
+      'points': points ?? entry.value['points'],
+    });
+  }
+}
+
+Future<void> deleteUser(String docId) async {
+  try{
+    await FirebaseFirestore.instance.collection('Players').doc(docId).delete();
+    debugPrint("User deleted!");
+  }catch(e){
+    debugPrint('Deleting user failed: $e');
+  }
+}
+
+Future<Map<String, Map<String, dynamic>>> getAllEntriesAsMap() async {
+  try {
+    // Fetch all documents in the 'Players' collection
+    QuerySnapshot querySnapshot = await FirebaseFirestore.instance.collection('Players').get();
+
+    // Convert to a Map where the document ID is the key
+    Map<String, Map<String, dynamic>> allEntries = {
+      for (var doc in querySnapshot.docs) doc.id: doc.data() as Map<String, dynamic>
+    };
+
+    debugPrint("Fetched ${allEntries.length} entries.");
+    return allEntries;
+  } catch (e) {
+    debugPrint("Error fetching entries: $e");
+    return {};
+  }
+}
+
+String generateRandomId(int length) {
+  const String chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  final Random random = Random();
+  return List.generate(length, (index) => chars[random.nextInt(chars.length)]).join();
+}
+
+void syncClientWithServer(Map differences, Map clientData, Map serverData){
+  for (MapEntry difference in differences.entries){
+    if (difference.value[0] == '-'){
+      deleteUser(difference.key);
+    }
+    else if (!serverData.containsKey(difference.key)){
+      addUser(difference.key, clientData[difference.key]['color'], clientData[difference.key]['points']);
+    }else{
+      updateUser(MapEntry(difference.key, clientData[difference.key]));
+    }
+  }
+}
+Map mergeClientServer(Map differences, Map clientData, Map serverData){ // ehhhhhhh
+  Map data = serverData;
+  for (String key in clientData.keys){
+    if (!data.containsKey(key)){
+      data[key] = clientData[key];
+      addUser(key, clientData[key]['color'], clientData[key]['points']);
+    }
+  }
+  return data;
 }
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -53,35 +128,65 @@ class _ScoreBoardState extends State<ScoreBoard> {
   void initState() {
     super.initState();
     _initializePlayers();  // Call the async method here without awaiting it
-    addUser('userid', 'username');
+    // addUser('Cooper gomd', [0, 0, 0, 1], [DateTime.now()]);
+    // updateUser('cauoiud', [0, 0, 0, 0], [DateTime.now()]);
   }
 
   Future<void> _initializePlayers() async {
     Map rawPlayers = await readData();  // Fetch data asynchronously
-    // Map<String, Map<String, dynamic>> rawPlayers = {
-    //   "Me": {"score": 2, "color": [255, 128, 0, 128]}, // Purple
-    //   "Dylan": {"score": 6, "color": [255, 255, 0, 0]}, // Red
-    //   "Owen": {"score": 6, "color": [255, 255, 192, 203]}, // Pink
-    //   "Hayden": {"score": 5, "color": [255, 255, 165, 0]}, // Orange
-    //   "Mitch": {"score": 5, "color": [255, 0, 128, 0]}, // Green
-    //   "Cooper": {"score": 4, "color": [200, 0, 0, 255]}, // Blue
-    // };
-    resetData(true, false, false);
+    Map cloudData =  await getAllEntriesAsMap();
+    Map differences = {};  // [local, cloud]
+    const listEquality = ListEquality();
+
+    for (String key in {...cloudData.keys, ...rawPlayers.keys}) {
+      if (!rawPlayers.containsKey(key) || !cloudData.containsKey(key)){
+        differences[key] = [rawPlayers[key]?['points'].length ?? '-', cloudData[key]?['points'].length ?? '-'];
+      }else{
+        if (!listEquality.equals(cloudData[key]['points'], rawPlayers[key]['points'])){
+          differences[key] = [rawPlayers[key]['points'].length, cloudData[key]['points'].length];
+        }
+      }
+    }
+    if (differences.isNotEmpty){
+      // sync popup
+      String? option = await showDialog(
+        // ignore: use_build_context_synchronously
+        context: context,
+        builder: (context) {
+          return SyncPopup(differences: differences);
+        },
+      );
+      if (option != null){
+        switch (option){
+          case 'Client':          
+            // sync clients content with server
+            syncClientWithServer(differences, rawPlayers, cloudData);
+          case 'Merge': 
+            // combine both maps, which one takes priority? id say server
+
+          case 'Server': 
+            // sync servers content with the client
+            rawPlayers = cloudData;
+            writeData(rawPlayers, append: false);
+        }
+      }
+    }
+    // resetData(true, false, false);
     setState(() {
       // Use setState to update players after data is loaded and sorted
       players = Map.fromEntries(
         rawPlayers.entries.toList()
-          ..sort((a, b) => (b.value["history"]?.length ?? 0).compareTo(a.value["history"]?.length ?? 0))
+          ..sort((a, b) => (b.value["points"]?.length ?? 0).compareTo(a.value["points"]?.length ?? 0))
       );
     });
   }
 
-  void alterPlayers(String label, List value){
+  void addPoint(String label, List value){
     setState(() {
-    players[label]!['history'] = value;
+    players[label]!['points'] = value;
       players = Map.fromEntries(
         players.entries.toList()
-          ..sort((a, b) => (b.value["history"].length ?? 0).compareTo(a.value["history"].length ?? 0))
+          ..sort((a, b) => (b.value["points"]?.length ?? 0).compareTo(a.value["points"]?.length ?? 0))
       );
     });
     writeData(players, append: false);
@@ -93,7 +198,7 @@ class _ScoreBoardState extends State<ScoreBoard> {
       if (key == oldKey) {
         // Replace the old key with the new key and update the value
         updatedPlayers[newTile['label']] = {
-          'history': newTile['history'],
+          'points': newTile['points'],
           'color': newTile['color']
         };
       } else {
@@ -104,27 +209,31 @@ class _ScoreBoardState extends State<ScoreBoard> {
     setState(() {
         players = updatedPlayers;
     });
+    updateUser(MapEntry(oldKey, newTile), name: newTile['label']);
     writeData(players, append: false);
   }
   void addRecord(String label, DateTime dateTime){
-    players[label]['history'] ??= [];
-    players[label]['history'].add(DateFormat('yyyy-MM-dd HH:mm').format(dateTime));
+    players[label]['points'] ??= [];
+    players[label]['points'].add(DateFormat('yyyy-MM-dd HH:mm').format(dateTime));
+    updateUser(MapEntry(label, players[label]), points: players[label]['points']);
     writeData(players, append: false);
   }
   void removeRecord(String player, int index){
     setState(() {
-      // players[player]['history']?.removeAt(index);
+      players[player]['points']?.removeAt(index);
       players = Map.fromEntries(
         players.entries.toList()
-          ..sort((a, b) => (b.value["history"].length ?? 0).compareTo(a.value["history"].length ?? 0))
+          ..sort((a, b) => (b.value["points"].length ?? 0).compareTo(a.value["points"].length ?? 0))
       );
     });
+    updateUser(MapEntry(player, players[player]), points: players[player]['points']);
     writeData(players, append: false);
   }
   void removeTile(String key){
     setState(() {
       players.remove(key);
     });
+    deleteUser(key);
     writeData(players, append: false);
   }
 
@@ -149,12 +258,12 @@ class _ScoreBoardState extends State<ScoreBoard> {
                   final key = players.keys.toList()[index];
                   return ScoreCounter(
                     label: key,
-                    initialScore: players[key]["history"]?.length ?? 0,
+                    initialScore: players[key]["points"]?.length ?? 0,
                     color: players[key]["color"],
-                    incriment: alterPlayers,
+                    incriment: addPoint,
                     edit: editPlayer,
                     addRecord: addRecord, 
-                    history: players[key]['history'] ?? [], 
+                    history: players[key]['points'] ?? [], 
                     removeRecord: removeRecord,
                     removeTile: removeTile,
                   );
@@ -177,7 +286,8 @@ class _ScoreBoardState extends State<ScoreBoard> {
                   String label = tile["label"];
                   Color color = tile['color'];
                   setState(() {
-                    players[label] = {'history': [], 'color': [255, color.red, color.green, color.blue]};
+                    players[label] = {'points': [], 'color': [255, color.red, color.green, color.blue]};
+                    addUser(label, [255, color.red, color.green, color.blue], []);
                   });
                   writeData(players, append: false);
                 }
@@ -283,7 +393,7 @@ class _ScoreCounterState extends State<ScoreCounter> {
         String? option = await showModalBottomSheet(
           context: context,
           builder: (context) {
-            return OptionsPopup();
+            return const OptionsPopup();
           },
         );
         if (option == 'Edit Tile') {
@@ -296,7 +406,7 @@ class _ScoreCounterState extends State<ScoreCounter> {
           if (tile != null){
             String label = tile["label"];
             Color color = tile['color'];
-            Map newTile = {'label': label, 'history': widget.history, 'color': [255, color.red, color.green, color.blue]};
+            Map newTile = {'label': label, 'points': widget.history, 'color': [255, color.red, color.green, color.blue]};
             widget.edit(widget.label, newTile);
           }     
         } else if (option == 'View history'){
@@ -472,7 +582,7 @@ class _AddPopupState extends State<AddPopup> {
                 }
             },
             child: Padding(
-              padding: EdgeInsets.only(left: 20),
+              padding: const EdgeInsets.only(left: 20),
               child: Container(
                 width: 35,
                 height: 35,
@@ -556,7 +666,7 @@ class _OptionsPopupState extends State<OptionsPopup> {
               padding: const EdgeInsets.all(8),
               child: Text(
                 name,
-                style: TextStyle(
+                style: const TextStyle(
                   fontSize: 20
                 ),
               ),
@@ -609,9 +719,8 @@ class _HistoryPopupState extends State<HistoryPopup> {
                     trailing: GestureDetector(
                       onTap: () {
                         setState(() {
-                          widget.player.removeAt(index);
+                          widget.removeItem(widget.playerName, index);
                         });
-                        widget.removeItem(widget.playerName, index);
                       },
                       child: const Icon(
                         Icons.close,
@@ -660,6 +769,7 @@ class _DateTimePickerDialogState extends State<DateTimePickerDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Select Date and Time'),
+      actionsAlignment: MainAxisAlignment.center,
       content: Row(
         children: [
           Expanded(
@@ -711,7 +821,7 @@ class _DateTimePickerDialogState extends State<DateTimePickerDialog> {
           onPressed: () {
             Navigator.of(context).pop();
           },
-          child: Text('Cancel'),
+          child: const Text('Cancel'),
         ),
         TextButton(
           onPressed: () {
@@ -721,8 +831,98 @@ class _DateTimePickerDialogState extends State<DateTimePickerDialog> {
               'time': time,
             });
           },
-          child: Text('OK'),
+          child: const Text('OK'),
         ),
+      ],
+    );
+  }
+}
+
+class SyncPopup extends StatefulWidget {
+  final Map differences;
+  SyncPopup({super.key, required this.differences});
+  @override
+  _SyncPopupState createState() => _SyncPopupState();
+}
+
+class _SyncPopupState extends State<SyncPopup> {
+  TextStyle actionsButtonStyle = const TextStyle(
+    fontSize: 20,
+  );
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Row(
+        children: [
+          Icon(
+            Icons.warning_rounded,
+            size: 40,
+          ),
+          SizedBox(width: 10,),
+          Text(
+            'Content mismatch',
+            style: TextStyle(
+              fontSize: 20,
+            ),
+          )
+        ],  
+      ),
+      content: SizedBox(
+        width: 400,
+        child: ListView.builder(
+          itemCount: widget.differences.length,
+          shrinkWrap: true,
+          itemBuilder: (context, index){
+            MapEntry entry = widget.differences.entries.toList()[index];
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Text(
+                  entry.key,
+                  style: const TextStyle(
+                    fontSize: 20,
+                  ),
+                ),
+                Text(
+                  'C: ${entry.value[0]}  |  S: ${entry.value[1]}',
+                  style: const TextStyle(
+                    fontSize: 20,
+                  ),
+                )
+              ],
+            );
+          }
+        ),
+      ),
+      actionsAlignment: MainAxisAlignment.spaceEvenly,
+      actions: [
+        TextButton(
+          onPressed: (){
+            Navigator.pop(context, 'Client');
+          }, 
+          child: Text(
+            'Client',
+            style: actionsButtonStyle,
+          )
+        ),
+        TextButton(
+          onPressed: (){
+            Navigator.pop(context, 'Merge');
+          }, 
+          child: Text(
+            'Merge',
+            style: actionsButtonStyle,
+          )
+        ),
+        TextButton(
+          onPressed: (){
+            Navigator.pop(context, 'Server');
+          }, 
+          child: Text(
+            'Server',
+            style: actionsButtonStyle,
+          )
+        )
       ],
     );
   }

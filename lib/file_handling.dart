@@ -7,8 +7,8 @@ import 'package:path_provider/path_provider.dart';
 Future<Map> readData({String path = 'output'}) async{
   Map jsonData= {};
   debugPrint("${path}id");
-  final dir = await getApplicationDocumentsDirectory();
-  String filepath = '${dir.path}/$path.json';
+  final dir = await getExternalStorageDirectory();
+  String filepath = '${dir!.path}/$path.json';
   debugPrint(filepath);
   var file = File(filepath);
   var exists = await file.exists();
@@ -26,11 +26,11 @@ Future<Map> readData({String path = 'output'}) async{
 
 Future<void> writeData(Map newData, {String path = 'output', bool append = true}) async {
   try {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getExternalStorageDirectory();
 
     // Path handling: split the provided path into directory and file name components
     List<String> pathComponents = path.split('/');
-    String directoryPath = '${dir.path}/${pathComponents.sublist(0, pathComponents.length - 1).join('/')}';
+    String directoryPath = '${dir!.path}/${pathComponents.sublist(0, pathComponents.length - 1).join('/')}';
     String filePath = '${dir.path}/$path.json';
 
     // If appending is enabled, merge existing data with new data
@@ -62,8 +62,8 @@ Future<void> writeData(Map newData, {String path = 'output', bool append = true}
 Future<void> resetData(bool output, bool current, bool records) async {
   if (output){
     try {
-      final dir = await getApplicationDocumentsDirectory();
-      final path = '${dir.path}/output.json';
+      final dir = await getExternalStorageDirectory();
+      final path = '${dir!.path}/output.json';
       final file = File(path);
       await file.writeAsString('');
       debugPrint('json reset at: $path');
